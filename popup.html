@@ -99,32 +99,33 @@
           </select>
         </div>
 
-        <!-- 链接模式配置 -->
-        <div id="linkConfig" style="display:none;">
-          <p class="mode-hint">粘贴闲鱼商品链接或分享文案，自动识别提取。</p>
+      </div>
 
-          <div class="input-group">
-            <textarea id="linkInput" rows="3" placeholder="粘贴闲鱼链接或APP分享文案..."></textarea>
-          </div>
+      <!-- 链接模式配置 -->
+      <div id="linkConfig" style="display:none;">
+        <p class="mode-hint">粘贴闲鱼商品链接或分享文案，自动识别提取。</p>
 
-          <div class="checkbox-item" style="margin-bottom:10px;">
-            <input type="checkbox" id="collectDetailLink" checked>
-            <label for="collectDetailLink">采集商品详情（价格/销量等）</label>
-          </div>
+        <div class="input-group">
+          <textarea id="linkInput" rows="3" placeholder="粘贴闲鱼链接或APP分享文案..."></textarea>
+        </div>
 
-          <div class="checkbox-item" style="margin-bottom:10px;">
-            <input type="checkbox" id="collectImagesLink">
-            <label for="collectImagesLink">采集商品图片（输出 ZIP）</label>
-          </div>
+        <div class="checkbox-item" style="margin-bottom:10px;">
+          <input type="checkbox" id="collectDetailLink" checked>
+          <label for="collectDetailLink">采集商品详情（价格/销量等）</label>
+        </div>
 
-          <div class="input-group">
-            <label for="exportTypeLink">导出格式</label>
-            <select id="exportTypeLink">
-              <option value="csv">CSV（原始）</option>
-              <option value="html">HTML（带图，可浏览器查看）</option>
-              <option value="excel">Excel（.xlsx，图片嵌入单元格）</option>
-            </select>
-          </div>
+        <div class="checkbox-item" style="margin-bottom:10px;">
+          <input type="checkbox" id="collectImagesLink">
+          <label for="collectImagesLink">采集商品图片（输出 ZIP）</label>
+        </div>
+
+        <div class="input-group">
+          <label for="exportTypeLink">导出格式</label>
+          <select id="exportTypeLink">
+            <option value="csv">CSV（原始）</option>
+            <option value="html">HTML（带图，可浏览器查看）</option>
+            <option value="excel">Excel（.xlsx，图片嵌入单元格）</option>
+          </select>
         </div>
       </div>
     </div>

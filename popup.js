@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   tabAuto.addEventListener('click', () => switchMode('auto'));
   tabManual.addEventListener('click', () => switchMode('manual'));
-tabLink.addEventListener('click', () => switchMode('link'));
+  tabLink.addEventListener('click', () => switchMode('link'));
 
   // --- Helpers ---
   function waitForPageLoad(tabId) {
