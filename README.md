@@ -1,8 +1,7 @@
 # 闲鱼商品采集器 Pro
 
-一个基于 Chrome 浏览器扩展的闲鱼 / Goofish 商品采集工具，支持搜索结果采集、手动勾选采集、单链接采集、商品详情抓取、多格式导出，以及商品高清图 ZIP 打包。
+一个基于 Chrome 浏览器扩展插件的 闲鱼 商品采集工具，支持搜索结果采集、手动勾选采集、单链接采集、商品详情抓取、多格式导出，以及商品高清图 ZIP 打包。
 
-本项目开发参考过 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 的实现思路，现作为独立项目维护。仅供学习、研究和个人数据整理使用，请勿用于违反目标网站条款的用途。
 
 ## 版本说明
 
@@ -179,7 +178,7 @@ manifest.json   浏览器扩展配置
 
 ## 来源说明
 
-本项目开发参考过 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 的实现思路，现作为独立项目维护。
+本项目开发参考 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 的实现思路，作为独立项目维护。仅供学习、研究和个人数据整理使用，请勿用于违反目标网站条款的用途。
 
 请遵守以下约束：
 
