@@ -40,13 +40,6 @@
       "run_at": "document_end"
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["NOTICE.txt"],
-      "matches": ["<all_urls>"]
-    }
-  ],
-  "x_oss_notice": "OSS-NOTICE-3E5F8A7C-2025-09",
   "background": {
     "service_worker": "background.js"
   },

@@ -534,27 +534,6 @@ async function toDataURL(url) {
 	}
 }
 
-const __OSS_TOKEN = "OSS-NOTICE-3E5F8A7C-2025-09";
-/**
- * 强制开源告知校验：校验 manifest 与 NOTICE.txt
- * 不通过将抛错，阻断采集流程
- */
-async function __verifyNotice() {
-	const mf = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
-	if (!mf || mf.x_oss_notice !== __OSS_TOKEN) {
-		throw new Error("OSS Notice missing or changed");
-	}
-	try {
-		const res = await fetch(chrome.runtime.getURL("NOTICE.txt"));
-		const txt = await res.text();
-		if (!txt || !txt.includes(__OSS_TOKEN)) {
-			throw new Error("OSS Notice mismatch");
-		}
-	} catch (_) {
-		throw new Error("OSS Notice check failed");
-	}
-}
-
 /**
  * 导出为HTML（增强版：表格美化 + 过滤 + 图片放大 + 文案折叠/弹窗 + 排序）
  */

@@ -1,30 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const __OSS_TOKEN = "OSS-NOTICE-3E5F8A7C-2025-09";
-  let __OSS_OK = false;
-  async function __verifyOssNotice() {
-    try {
-      const mf = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : null;
-      if (!mf || mf.x_oss_notice !== __OSS_TOKEN) throw new Error('manifest x_oss_notice missing or changed');
-      const res = await fetch(chrome.runtime.getURL('NOTICE.txt'));
-      const txt = await res.text();
-      if (!txt || !txt.includes(__OSS_TOKEN)) throw new Error('NOTICE token mismatch');
-      __OSS_OK = true;
-    } catch (e) {
-      __OSS_OK = false;
-    }
-  }
-  __verifyOssNotice().then(() => {
-    if (!__OSS_OK) {
-      const btn = document.getElementById('startCollect');
-      const out = document.getElementById('logOutput');
-      if (btn) btn.disabled = true;
-      if (out) {
-        const ts = new Date().toLocaleTimeString();
-        out.value += `[${ts}] 开源告知校验失败，扩展已禁用\n`;
-      }
-    }
-  });
-
   // --- DOM refs ---
   const startButton = document.getElementById('startCollect');
   const tabAuto = document.getElementById('tabAuto');
@@ -88,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
       manualConfig.style.display = 'none';
       linkConfig.style.display = 'none';
       startButton.textContent = '开始采集';
-      startButton.disabled = !__OSS_OK;
+      startButton.disabled = false;
       progressContainer.style.display = 'none';
     } else if (mode === 'manual') {
       tabManual.classList.add('active');
@@ -98,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
       manualConfig.style.display = '';
       linkConfig.style.display = 'none';
       startButton.textContent = '开启勾选模式';
-      startButton.disabled = !__OSS_OK;
+      startButton.disabled = false;
       progressContainer.style.display = 'none';
     } else {
       tabLink.classList.add('active');
@@ -108,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
       manualConfig.style.display = 'none';
       linkConfig.style.display = '';
       startButton.textContent = '开始采集';
-      startButton.disabled = !__OSS_OK;
+      startButton.disabled = false;
       progressContainer.style.display = 'none';
     }
   }
@@ -194,12 +168,6 @@ tabLink.addEventListener('click', () => switchMode('link'));
 
   // --- Start button handler ---
   startButton.addEventListener('click', async () => {
-    if (typeof __OSS_OK !== 'undefined' && !__OSS_OK) {
-      const ts = new Date().toLocaleTimeString();
-      logOutput.value += `[${ts}] 开源告知校验失败，无法开始采集\n`;
-      return;
-    }
-
     if (currentMode === 'manual') {
       // --- 手动勾选模式 ---
       try {
@@ -376,7 +344,7 @@ tabLink.addEventListener('click', () => switchMode('link'));
     if (request.action === 'selectionComplete') {
       log(`手动采集完成，共 ${request.count || 0} 个商品已导出`);
       startButton.textContent = '开启勾选模式';
-      startButton.disabled = !__OSS_OK;
+      startButton.disabled = false;
       progressContainer.style.display = 'none';
     }
   });

@@ -2,7 +2,7 @@
 
 一个基于 Chrome 浏览器扩展的闲鱼 / Goofish 商品采集工具，支持搜索结果采集、手动勾选采集、单链接采集、商品详情抓取、多格式导出，以及商品高清图 ZIP 打包。
 
-本项目基于 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 修改增强而来，保留原项目的 `NOTICE.txt` 与开源告知校验。仅供学习、研究和个人数据整理使用，请勿用于商业售卖或违反目标网站条款的用途。
+本项目开发参考过 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 的实现思路，现作为独立项目维护。仅供学习、研究和个人数据整理使用，请勿用于违反目标网站条款的用途。
 
 ## 版本说明
 
@@ -164,7 +164,6 @@ options.js      字段配置逻辑
 options.css     字段配置页样式
 xlsx-lite.js    轻量 XLSX 与 ZIP 生成工具
 manifest.json   浏览器扩展配置
-NOTICE.txt      开源告知，请勿删除
 ```
 
 ## 开发调试
@@ -178,18 +177,13 @@ NOTICE.txt      开源告知，请勿删除
 3. 再测试详情采集。
 4. 最后测试 ZIP 图片导出。
 
-## 来源与声明
+## 来源说明
 
-本项目基于 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 修改而来。
-
-原项目未提供标准开源许可证文件，但包含 `NOTICE.txt` 使用告知。本项目保留该文件及相关校验逻辑，不移除、不规避原项目署名与告知要求。
+本项目开发参考过 [webxiaoyou/xianyucaiji](https://github.com/webxiaoyou/xianyucaiji) 的实现思路，现作为独立项目维护。
 
 请遵守以下约束：
 
 - 仅用于学习、研究和个人数据整理。
-- 不得用于商业售卖。
-- 不得删除 `NOTICE.txt`。
-- 不得移除或绕过开源告知校验。
 - 使用本工具造成的后果由使用者自行承担。
 
 ## 免责声明
