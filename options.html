@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>闲鱼采集器 - 字段配置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h2>导出字段配置</h2>
+      <span class="subtitle">选择要在导出文件中包含的字段</span>
+    </header>
+
+    <div class="actions-bar">
+      <button id="selectAll" class="btn">全选</button>
+      <button id="deselectAll" class="btn">取消全选</button>
+    </div>
+
+    <div class="fields-grid" id="fieldsGrid"></div>
+
+    <div class="footer-bar">
+      <button id="saveBtn" class="btn primary">保存配置</button>
+      <span id="status" class="status"></span>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

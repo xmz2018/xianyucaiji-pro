@@ -130,7 +130,7 @@
 
   // XML esc
   function esc(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'''}[c]));
+	    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
   }
 
   // Convert dataURL to Uint8Array
@@ -383,6 +383,7 @@
   // expose
   window.XlsxLite = {
     buildXlsx,
-    exportXlsxWithImages
+    exportXlsxWithImages,
+    buildZip
   };
 })();

@@ -20,7 +20,8 @@
   },
   "permissions": [
     "scripting",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "*://*.goofish.com/*",
@@ -48,5 +49,9 @@
   "x_oss_notice": "OSS-NOTICE-3E5F8A7C-2025-09",
   "background": {
     "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   }
 }

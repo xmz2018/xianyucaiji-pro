@@ -59,8 +59,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               const price = document.querySelector('[class*="price"]');
               const userInfo = document.querySelector('[class*="user-info"]');
               const mainContent = document.querySelector('#content');
-              const description = document.querySelector('[class*="notLoginContainer"] [class*="main"]');
-              
+              const description = document.querySelector('[class*="desc--"]') || document.querySelector('[class*="notLoginContainer"] [class*="main"]');
+
               if (price && userInfo && mainContent && description) {
                 resolve();
               } else {
@@ -77,36 +77,77 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       });
 
-      // 额外等待以确保动态内容加载完成
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 等待高清轮播图加载；失败不阻断详情采集，但后续不会回退低清图
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          function hasHighQualityCarouselImage() {
+            return Array.from(document.querySelectorAll('[class*="carouselItem"] img')).some(img => {
+              const url = img.currentSrc || img.src || img.dataset.src || '';
+              return img.naturalWidth >= 700 || url.includes('_790x10000Q90');
+            });
+          }
+
+          function waitForHighQualityCarousel(timeoutMs) {
+            return new Promise(resolve => {
+              const start = Date.now();
+              const check = () => {
+                if (hasHighQualityCarouselImage()) {
+                  resolve(true);
+                  return;
+                }
+                if (Date.now() - start >= timeoutMs) {
+                  resolve(false);
+                  return;
+                }
+                setTimeout(check, 500);
+              };
+              check();
+            });
+          }
+
+          return (async () => {
+            if (await waitForHighQualityCarousel(8000)) {
+              return true;
+            }
+
+            window.scrollBy({ top: 1, left: 0, behavior: 'auto' });
+            await new Promise(resolve => setTimeout(resolve, 500));
+            window.scrollBy({ top: -1, left: 0, behavior: 'auto' });
+            return waitForHighQualityCarousel(8000);
+          })();
+        }
+      }).catch(error => {
+        console.warn('高清轮播图等待失败:', error && error.message ? error.message : error);
+      });
     };
 
     async function createTab(url) {
       // 创建新标签页时添加随机延迟
       await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-      
-      return chrome.tabs.create({ 
-        url: url, 
-        active: false 
+
+      return chrome.tabs.create({
+        url: url,
+        active: false
       });
     }
 
     (async () => {
       let tab = null;
       try {
-        // 设置30秒总超时
+        // 设置45秒总超时，给高清轮播图加载与一次重试留出时间
         timeoutId = setTimeout(() => {
           if (!responseReceived) {
             cleanup(tab);
             responseReceived = true;
             sendResponse({ success: false, error: '获取详情超时' });
           }
-        }, 30000);
+        }, 45000);
 
         // 创建新标签页
         tab = await createTab(request.url);
         activeTabs.add(tab.id);
-        
+
         // 等待页面完全加载
         await waitForFullLoad(tab.id);
 
@@ -159,13 +200,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 ]
               },
               description: {
-                primary: '#content > div.item-container--yLJD5VZj > div.item-main-container--jhpFKlaS > div.item-main-info--ExVwW2NW > div.notLoginContainer--hQCDYhxp > div.main--Nu33bWl6.open--gEYf_BQc > div',
+                primary: '[class*="desc--"]',
                 backup: [
                   '[class*="notLoginContainer"] [class*="main"] > div',
                   '[class*="main"] > div'
                 ]
+              },
+              images: {
+                primary: collectHighQualityCarouselImages(),
+                backup: []
               }
             };
+
+            function getOriginalImageKey(url) {
+              return String(url || '')
+                .replace(/^https?:\/\//, '')
+                .replace(/^\/\//, '')
+                .replace(/_\d+x\d+Q?\d*\.jpg_\.webp$/i, '')
+                .replace(/_\d+x\d+\.jpg_\.webp$/i, '')
+                .replace(/_\d+x10000Q?\d*\.jpg_\.webp$/i, '')
+                .replace(/_\d+x10000\.jpg_\.webp$/i, '');
+            }
+
+            function collectHighQualityCarouselImages() {
+              const seen = new Set();
+              return Array.from(document.querySelectorAll('[class*="carouselItem"] img'))
+                .filter(img => !img.closest('[class*="slick-cloned"]'))
+                .map(img => {
+                  const url = img.currentSrc || img.src || img.dataset.src || '';
+                  return {
+                    url,
+                    key: getOriginalImageKey(url),
+                    isHighQuality: img.naturalWidth >= 700 || url.includes('_790x10000Q90')
+                  };
+                })
+                .filter(item => {
+                  if (!item.url || !item.isHighQuality || !item.key || seen.has(item.key)) {
+                    return false;
+                  }
+                  seen.add(item.key);
+                  return true;
+                })
+                .map(item => item.url);
+            }
 
             function findElement(selectorConfig) {
               let element = document.querySelector(selectorConfig.primary);
@@ -188,9 +265,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             const details = {};
             for (const [key, selectorConfig] of Object.entries(selectors)) {
-              const element = findElement(selectorConfig);
-              details[key] = element ? element.textContent.trim() : '';
-              console.log(`${key}:`, details[key] || '未找到');
+              if (key === 'images') {
+                const seen = new Set();
+                details[key] = (selectorConfig.primary || []).filter(url => {
+                  if (!url || seen.has(url)) return false;
+                  seen.add(url);
+                  return true;
+                });
+              } else if (key === 'description') {
+                const element = findElement(selectorConfig);
+                details[key] = element ? (element.innerText || element.textContent || '').trim() : '';
+                console.log(key + ':', details[key] ? details[key].substring(0, 80) + '...' : '未找到');
+              } else {
+                const element = findElement(selectorConfig);
+                details[key] = element ? element.textContent.trim() : '';
+                console.log(key + ':', details[key] || '未找到');
+              }
             }
 
             return details;
@@ -224,4 +314,4 @@ function cleanupAll() {
   activeTabs.clear();
 }
 
-chrome.runtime.onSuspend.addListener(cleanupAll); 
+chrome.runtime.onSuspend.addListener(cleanupAll);

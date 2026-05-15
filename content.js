@@ -44,6 +44,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			}
 		})();
 		return true;
+	} else if (request.action === 'enableSelectMode') {
+		(async () => {
+			try {
+				await enableSelectMode(request);
+				sendResponse({ success: true });
+			} catch (error) {
+				console.error('开启勾选模式失败:', error);
+				sendResponse({ success: false, error: error.message });
+			}
+		})();
+		return true;
+	} else if (request.action === 'disableSelectMode') {
+		disableSelectMode();
+		sendResponse({ success: true });
+		return false;
+	} else if (request.action === 'collectSingle') {
+		(async () => {
+			try {
+				sendLog('single link: ' + request.url);
+				var detail = await fetchProductDetail(request.url);
+				detail.coverImage = '';
+				try {
+					var imgs = document.querySelectorAll('[class*="item-pic"] img, img[src*="item_pic"]');
+					if (imgs.length > 0) {
+						detail.coverImage = imgs[0].src || imgs[0].dataset.src || '';
+					}
+				} catch(e) {}
+				var products = [detail];
+				await exportData(products, 'single', request.collectDetail !== false, request.exportType || 'csv', request.collectImages, 1, request.selectedFields);
+				sendResponse({ success: true });
+			} catch (error) {
+				console.error('single collect error:', error);
+				sendResponse({ success: false, error: error.message });
+			}
+		})();
+		return true;
 	} else if (request.action === 'ping') {
 		sendResponse({
 			status: 'ok'
@@ -336,7 +372,7 @@ function cleanValue(value, type) {
  * @param {string} keyword - 搜索关键词
  * @param {boolean} withDetails - 是否包含详情
  */
-function exportToCSV(products, keyword, withDetails = true) {
+function exportToCSV(products, keyword, withDetails = true, returnBlob = false, selectedFields = null) {
 	try {
 		// 根据是否包含详情决定表头
 		const headers = withDetails ? ['序号', '商品封面', '商品链接', '发布地', '想要数', '浏览量', '价格', '店铺名称', '产品文案'] : ['序号', '商品封面',
@@ -356,7 +392,8 @@ function exportToCSV(products, keyword, withDetails = true) {
 					cleanValue(product.viewCount, 'viewCount'),
 					cleanValue(product.price, 'price'),
 					cleanValue(product.shopName),
-					cleanValue(product.description, 'description')
+					cleanValue(product.description, 'description'),
+					product.imageFolder || ''
 				]);
 			} else {
 				rows.push([
@@ -367,13 +404,18 @@ function exportToCSV(products, keyword, withDetails = true) {
 			}
 		});
 
-		const csvContent = rows
+		var filtered = filterFields(selectedFields, headers, rows, withDetails);
+			var filteredHeaders = filtered.headers;
+			var filteredRows = filtered.rows;
+			filteredRows.unshift(filteredHeaders);
+			const csvContent = filteredRows
 			.map(row => row.map(cell => `"${cell}"`).join(','))
 			.join('\n');
 
 		const blob = new Blob(['\ufeff' + csvContent], {
 			type: 'text/csv;charset=utf-8;'
 		});
+		if (returnBlob) return blob;
 		const url = URL.createObjectURL(blob);
 		const link = document.createElement('a');
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -403,13 +445,76 @@ function sendLog(message) {
  * 发送进度
  */
 function sendProgress(current, total, status) {
-	chrome.runtime.sendMessage({
-		action: 'progress',
-		current,
-		total,
-		status
-	});
-}
+		chrome.runtime.sendMessage({
+			action: 'progress',
+			current,
+			total,
+			status
+		});
+	}
+
+	const FIELD_DEFS = [
+		{ key: 'index', label: '序号' },
+		{ key: 'coverImage', label: '商品封面' },
+		{ key: 'url', label: '商品链接' },
+		{ key: 'location', label: '发布地' },
+		{ key: 'wantCount', label: '想要数' },
+		{ key: 'viewCount', label: '浏览量' },
+		{ key: 'price', label: '价格' },
+		{ key: 'shopName', label: '店铺名称' },
+		{ key: 'description', label: '产品文案' },
+		{ key: 'imageFolder', label: '查看图片' }
+	];
+
+	const FULL_FIELD_KEYS = ['index', 'coverImage', 'url', 'location', 'wantCount', 'viewCount', 'price', 'shopName', 'description', 'imageFolder'];
+	const SIMPLE_FIELD_KEYS = ['index', 'coverImage', 'url'];
+
+	function filterFields(selectedFields, headers, rows, withDetails) {
+		if (!selectedFields || selectedFields.length === 0) {
+			return { headers: headers, rows: rows };
+		}
+		var fieldKeys = withDetails ? FULL_FIELD_KEYS : SIMPLE_FIELD_KEYS;
+		var keepIndices = [];
+		for (var i = 0; i < fieldKeys.length; i++) {
+			if (selectedFields.indexOf(fieldKeys[i]) !== -1) {
+				keepIndices.push(i);
+			}
+		}
+		if (keepIndices.length === fieldKeys.length) {
+			return { headers: headers, rows: rows };
+		}
+		var filteredHeaders = keepIndices.map(function(i) { return headers[i]; });
+		var filteredRows = rows.map(function(row) {
+			return keepIndices.map(function(i) { return row[i]; });
+		});
+		return { headers: filteredHeaders, rows: filteredRows };
+	}
+
+function computeImageFolders(products) {
+		var folderCountMap = {};
+		products.forEach(function(p, pi) {
+			var descText = (p.description || '').replace(/[\r\n\t]+/g, ' ').trim();
+			var folderChars = [];
+			var nonSpaceCount = 0;
+			for (var ci = 0; ci < descText.length; ci++) {
+				if (descText[ci] !== ' ') nonSpaceCount++;
+				if (nonSpaceCount > 20) break;
+				folderChars.push(descText[ci]);
+			}
+			var folder = folderChars.join('').replace(/[\/:*?"<>|]/g, '').trim();
+			if (!folder) {
+				folder = '商品' + (pi + 1);
+			}
+			var baseFolder = folder;
+			if (folderCountMap[baseFolder] !== undefined) {
+				folderCountMap[baseFolder]++;
+				folder = baseFolder + '_' + folderCountMap[baseFolder];
+			} else {
+				folderCountMap[baseFolder] = 0;
+			}
+			p.imageFolder = 'images/' + folder + '/';
+		});
+	}
 
 /**
  * 将图片URL转为dataURL（失败则回退为原URL）
@@ -453,40 +558,54 @@ async function __verifyNotice() {
 /**
  * 导出为HTML（增强版：表格美化 + 过滤 + 图片放大 + 文案折叠/弹窗 + 排序）
  */
-async function exportToHTML(products, keyword, withDetails = true) {
+async function exportToHTML(products, keyword, withDetails = true, returnBlob = false, selectedFields = null) {
   const headers = withDetails
     ? ['序号', '商品封面', '商品链接', '发布地', '想要数', '浏览量', '价格', '店铺名称', '产品文案']
     : ['序号', '商品封面', '商品链接'];
 
   const coverList = await Promise.all(products.map(p => p.coverImage ? toDataURL(p.coverImage) : ''));
 
-  const rowsHtml = products.map((p, i) => {
+  // Build data rows as arrays for filtering
+  const dataRows = products.map((p, i) => {
     const cover = coverList[i] || '';
     const want = parseFloat(cleanValue(p.wantCount || '', 'wantCount'));
     const view = parseFloat(cleanValue(p.viewCount || '', 'viewCount'));
     const price = parseFloat(cleanValue(p.price || '', 'price'));
     if (withDetails) {
-      return `<tr class="data-row" data-want="${isNaN(want) ? '' : want}" data-view="${isNaN(view) ? '' : view}" data-price="${isNaN(price) ? '' : price}">
-  <td class="index-cell">${i + 1}</td>
-  <td class="cover-cell">
-    <div class="cover-box"><img src="${cover}" alt="cover" class="thumb"/></div>
-  </td>
-  <td class="link-cell"><a href="${p.url}" target="_blank">${p.url}</a></td>
-  <td>${cleanValue(p.location || '', '')}</td>
-  <td class="num want">${isNaN(want) ? '' : want}</td>
-  <td class="num view">${isNaN(view) ? '' : view}</td>
-  <td class="num price">${isNaN(price) ? '' : price}</td>
-  <td>${cleanValue(p.shopName || '', '')}</td>
-  <td class="desc-cell"><div class="desc clamp">${cleanValue(p.description || '', 'description')}</div><button type="button" class="link-btn view-desc">查看</button></td>
-</tr>`;
+      return [String(i + 1), cover, p.url, cleanValue(p.location || '', ''), isNaN(want) ? '' : String(want), isNaN(view) ? '' : String(view), isNaN(price) ? '' : String(price), cleanValue(p.shopName || '', ''), cleanValue(p.description || '', 'description'), p.imageFolder || ''];
     } else {
-      return `<tr class="data-row" data-want="" data-view="" data-price="">
-  <td class="index-cell">${i + 1}</td>
-  <td class="cover-cell">
-    <div class="cover-box"><img src="${cover}" alt="cover" class="thumb"/></div>
-  </td>
-  <td class="link-cell"><a href="${p.url}" target="_blank">${p.url}</a></td>
-</tr>`;
+      return [String(i + 1), cover, p.url];
+    }
+  });
+  const _f = filterFields(selectedFields, headers, dataRows, withDetails);
+  const _fh = _f.headers;
+  const _fr = _f.rows;
+
+  const rowsHtml = _fr.map((row, i) => {
+    if (withDetails && _fh.length >= 5) {
+      const _r = row;
+      const _w = parseFloat(_r[4] || '0');
+      const _v = parseFloat(_r[5] || '0');
+      const _p = parseFloat(_r[6] || '0');
+      return '<tr class="data-row" data-want="' + (isNaN(_w) ? '' : _w) + '" data-view="' + (isNaN(_v) ? '' : _v) + '" data-price="' + (isNaN(_p) ? '' : _p) + '">' +
+        '<td class="index-cell">' + _r[0] + '</td>' +
+        '<td class="cover-cell"><div class="cover-box"><img src="' + _r[1] + '" alt="cover" class="thumb"/></div></td>' +
+        '<td class="link-cell"><a href="' + _r[2] + '" target="_blank">' + _r[2] + '</a></td>' +
+        '<td>' + _r[3] + '</td>' +
+        '<td class="num want">' + _r[4] + '</td>' +
+        '<td class="num view">' + _r[5] + '</td>' +
+        '<td class="num price">' + _r[6] + '</td>' +
+        '<td>' + _r[7] + '</td>' +
+        '<td class="desc-cell"><div class="desc clamp">' + _r[8] + '</div><button type="button" class="link-btn view-desc">查看</button></td>' +
+        '<td>' + (_r[9] ? '<a href="' + _r[9] + '" target="_blank">查看图片</a>' : '') + '</td>' +
+        '</tr>';
+    } else {
+      const _r = row;
+      return '<tr class="data-row" data-want="" data-view="" data-price="">' +
+        '<td class="index-cell">' + _r[0] + '</td>' +
+        '<td class="cover-cell"><div class="cover-box"><img src="' + _r[1] + '" alt="cover" class="thumb"/></div></td>' +
+        '<td class="link-cell"><a href="' + _r[2] + '" target="_blank">' + _r[2] + '</a></td>' +
+        '</tr>';
     }
   }).join('\n');
 
@@ -565,7 +684,7 @@ tbody tr:nth-child(odd){background:#fff}tbody tr:nth-child(even){background:#FBF
 </style>`;
 
   const table = `<div class="table-wrap"><table>
-<thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+<thead><tr>${_fh.map(h => '<th>' + h + '</th>').join('')}</tr></thead>
 <tbody>
 ${rowsHtml}
 </tbody>
@@ -662,6 +781,7 @@ ${rowsHtml}
 </body></html>`;
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  if (returnBlob) return blob;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); const ts = new Date().toISOString().replace(/[:.]/g,'-');
   a.href = url; a.download = `闲鱼-${keyword}-${ts}.html`;
@@ -671,7 +791,7 @@ ${rowsHtml}
 /**
  * 导出为Excel（严格模式：内联样式/属性，确保图片不超出单元格）
  */
-async function exportToExcelStrict(products, keyword, withDetails = true) {
+async function exportToExcelStrict(products, keyword, withDetails = true, returnBlob = false, selectedFields = null) {
   const headers = withDetails
     ? ['序号', '商品封面', '商品链接', '发布地', '想要数', '浏览量', '价格', '店铺名称', '产品文案']
     : ['序号', '商品封面', '商品链接'];
@@ -745,6 +865,7 @@ ${rowsHtml}
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>闲鱼导出</title></head><body>${table}</body></html>`;
 
   const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+  if (returnBlob) return blob;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -758,7 +879,7 @@ ${rowsHtml}
 /**
  * 导出为Excel（.xlsx 优先：将图片锚定到单元格；失败回退 .xls 严格模式）
  */
-async function exportToExcel(products, keyword, withDetails = true) {
+async function exportToExcel(products, keyword, withDetails = true, returnBlob = false, selectedFields = null) {
   try {
     if (!window.XlsxLite) throw new Error('XlsxLite not loaded');
     const headers = withDetails
@@ -778,41 +899,167 @@ async function exportToExcel(products, keyword, withDetails = true) {
           (p.viewCount || '').toString(),
           (p.price || '').toString(),
           (p.shopName || '').toString(),
-          (p.description || '').toString()
+          (p.description || '').toString(),
+          p.imageFolder ? ('=HYPERLINK("' + p.imageFolder + '", "查看图片")') : ''
         ]);
       } else {
         rows.push([idx, '', p.url || '']);
       }
     });
 
-    const images = [];
-    for (let i = 0; i < products.length; i++) {
-      const d = covers[i];
-      if (!d) continue;
-      images.push({ row: i + 2, col: 2, dataUrl: d, widthPx: 100, heightPx: 100 });
-    }
+    // Apply field filtering
+	    const _f = filterFields(selectedFields, headers, rows.slice(1), withDetails);
+	    const filteredRows = [_f.headers];
+	    _f.rows.forEach(function(r) { filteredRows.push(r); });
+
+	    const coverColIndex = selectedFields ? selectedFields.indexOf('coverImage') : -1;
+	    const images = [];
+	    if (coverColIndex >= 0 || !selectedFields || selectedFields.length === 0) {
+	      const col = coverColIndex >= 0 ? coverColIndex + 1 : 2;
+	      for (let i = 0; i < products.length; i++) {
+	        const d = covers[i];
+	        if (!d) continue;
+	        images.push({ row: i + 2, col: col, dataUrl: d, widthPx: 100, heightPx: 100 });
+	      }
+	    }
 
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `闲鱼-${keyword}-${ts}.xlsx`;
-    await window.XlsxLite.exportXlsxWithImages({ filename, rows, images });
+    await window.XlsxLite.exportXlsxWithImages({ filename, rows: filteredRows, images });
   } catch (err) {
     console.warn('XLSX 导出不可用，回退 .xls:', err?.message || err);
-    return exportToExcelStrict(products, keyword, withDetails);
+    return exportToExcelStrict(products, keyword, withDetails, returnBlob, selectedFields);
   }
+}
+
+/**
+ * 导出为 ZIP（数据文件 + 商品图片）
+ */
+async function exportToZip(products, keyword, withDetails, exportType, concurrentCount, selectedFields = null) {
+	sendLog('开始准备 ZIP 导出...');
+	sendProgress(0, products.length, '准备数据文件...');
+
+	var dataExt = exportType === 'html' ? '.html' : exportType === 'excel' ? '.xlsx' : '.csv';
+	var dataFileName = 'data' + dataExt;
+	var dataBlob;
+	if (exportType === 'html') {
+		dataBlob = await exportToHTML(products, keyword, withDetails, true, selectedFields);
+	} else if (exportType === 'excel') {
+		dataBlob = await exportToExcel(products, keyword, withDetails, true, selectedFields);
+	} else {
+		dataBlob = exportToCSV(products, keyword, withDetails, true, selectedFields);
+	}
+
+	sendLog('收集商品图片 URL...');
+	var imageTasks = [];
+		var totalImages = 0;
+
+
+		products.forEach(function(p, pi) {
+			var images = p.images || [];
+			if (images.length === 0 && p.coverImage) {
+				images = [p.coverImage];
+			}
+
+			// Use pre-computed folder from computeImageFolders
+			var folderPath = p.imageFolder || ('images/商品' + (pi + 1) + '/');
+			// Extract just the folder name from path
+			var folder = folderPath.replace(/^images\//, '').replace(/\/$/, '');
+			if (!folder) {
+				folder = '商品' + (pi + 1);
+			}
+
+			images.forEach(function(imgUrl, ii) {
+				var extMatch = (imgUrl || '').match(/\.(jpg|jpeg|png|webp|gif)/i);
+				var ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+				var imageName = 'image_' + String(ii + 1).padStart(2, '0') + '.' + ext;
+
+				var zipPath = 'images/' + folder + '/' + imageName;
+				totalImages++;
+				imageTasks.push({
+					index: imageTasks.length,
+					url: imgUrl,
+					path: zipPath
+				});
+			});
+		});
+
+if (imageTasks.length === 0) {
+		sendLog('没有商品图片，仅导出数据文件');
+		var url = URL.createObjectURL(dataBlob);
+		var a = document.createElement('a'); var ts = new Date().toISOString().replace(/[:.]/g, '-');
+		a.href = url; a.download = '闲鱼-' + keyword + '-' + ts + dataExt;
+		document.body.appendChild(a); a.click(); document.body.removeChild(a);
+		return;
+	}
+
+	sendLog('开始下载 ' + imageTasks.length + ' 张商品图片（并发 ' + concurrentCount + '）');
+	sendProgress(0, imageTasks.length, '下载图片 0/' + imageTasks.length);
+
+	var completedImages = 0;
+	var downloadTasks = imageTasks.map(function(task) {
+		return async function() {
+			try {
+				var resp = await fetch(task.url, { mode: 'cors' });
+				if (!resp.ok) throw new Error('HTTP ' + resp.status);
+				var buf = await resp.arrayBuffer();
+				completedImages++;
+				sendProgress(completedImages, imageTasks.length, '下载图片 ' + completedImages + '/' + imageTasks.length);
+				return { path: task.path, bytes: new Uint8Array(buf), success: true };
+			} catch (e) {
+				completedImages++;
+				sendProgress(completedImages, imageTasks.length, '下载图片 ' + completedImages + '/' + imageTasks.length);
+				return { path: task.path, bytes: null, success: false };
+			}
+		};
+	});
+
+	var imageResults = await runConcurrently(downloadTasks, concurrentCount);
+	var successCount = imageResults.filter(function(r) { return r.success; }).length;
+	sendLog('图片下载完成：' + successCount + '/' + imageTasks.length + ' 张');
+
+	sendLog('正在打包 ZIP...');
+	var zipFiles = [
+		{ path: dataFileName, bytes: new Uint8Array(await dataBlob.arrayBuffer()) }
+	];
+	imageResults.forEach(function(r) {
+		if (r.success && r.bytes) {
+			zipFiles.push({ path: r.path, bytes: r.bytes });
+		}
+	});
+
+	var zipBytes = window.XlsxLite.buildZip(zipFiles);
+	var zipBlob = new Blob([zipBytes], { type: 'application/zip' });
+	var zipUrl = URL.createObjectURL(zipBlob);
+	var a = document.createElement('a');
+	var ts = new Date().toISOString().replace(/[:.]/g, '-');
+	a.href = zipUrl;
+	a.download = '闲鱼-' + keyword + '-' + ts + '.zip';
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+
+	sendLog('ZIP 导出完成，共 ' + products.length + ' 个商品，' + successCount + ' 张图片');
 }
 
 /**
  * 统一导出入口
  */
-async function exportData(products, keyword, withDetails = true, exportType = 'csv') {
+async function exportData(products, keyword, withDetails = true, exportType = 'csv', collectImages = false, concurrentCount = 3, selectedFields = null) {
+	if (withDetails) {
+		computeImageFolders(products);
+	}
+	if (collectImages) {
+		return exportToZip(products, keyword, withDetails, exportType, concurrentCount, selectedFields);
+	}
 	switch (exportType) {
 		case 'html':
-			return exportToHTML(products, keyword, withDetails);
+			return exportToHTML(products, keyword, withDetails, false, selectedFields);
 		case 'excel':
-			return exportToExcel(products, keyword, withDetails);
+			return exportToExcel(products, keyword, withDetails, false, selectedFields);
 		case 'csv':
 		default:
-			return exportToCSV(products, keyword, withDetails);
+			return exportToCSV(products, keyword, withDetails, false, selectedFields);
 	}
 }
 
@@ -983,7 +1230,7 @@ async function collectProductLinks(multiPage = true, maxPages = 10, keyword = ''
 			});
 
 			const products = await runConcurrently(tasks, concurrentCount);
-			await exportData(products, keyword, true, exportType);
+			await exportData(products, keyword, true, exportType, request.collectImages, concurrentCount, request.selectedFields);
 			sendLog('商品详情采集完成，已导出文件');
 			return linksArray;
 		} else {
@@ -991,7 +1238,7 @@ async function collectProductLinks(multiPage = true, maxPages = 10, keyword = ''
 			    url: link.url,
 			    coverImage: link.coverImage
 			  }));
-			  await exportData(simpleProducts, keyword, false, exportType);
+			  await exportData(simpleProducts, keyword, false, exportType, request.collectImages, concurrentCount, request.selectedFields);
 			sendLog('商品链接采集完成，已导出文件');
 			return linksArray;
 		}
@@ -1021,6 +1268,225 @@ async function fetchWithRetry(url, maxRetries = 3) {
 			await humanDelay(); // 随机延迟后重试
 		}
 	}
+}
+
+
+// ===================== 手动勾选模式 =====================
+
+let selectModeActive = false;
+let selectedMap = {}; // key: url, value: { url, coverImage }
+
+function injectSelectModeStyles() {
+	if (document.getElementById('__xy_select_styles')) return;
+	const style = document.createElement('style');
+	style.id = '__xy_select_styles';
+	style.textContent = `
+.__xy_checkbox {
+	position: absolute; top: 8px; left: 8px; z-index: 100;
+	width: 22px; height: 22px; cursor: pointer;
+	accent-color: #165DFF; transform: scale(1.2);
+	background: rgba(255,255,255,0.9); border-radius: 4px;
+}
+.__xy_toolbar {
+	position: fixed; bottom: 0; left: 0; right: 0; z-index: 99999;
+	background: #fff; border-top: 2px solid #165DFF;
+	padding: 12px 20px; display: flex; align-items: center; gap: 16px;
+	font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+	box-shadow: 0 -4px 16px rgba(0,0,0,0.1);
+}
+.__xy_toolbar .__xy_count { font-weight: 600; color: #165DFF; min-width: 100px; }
+.__xy_toolbar button {
+	padding: 8px 20px; border-radius: 8px; border: 1px solid #ddd;
+	font-size: 14px; cursor: pointer; background: #fff;
+}
+.__xy_toolbar .__xy_btn_confirm {
+	background: #165DFF; color: #fff; border-color: #165DFF; font-weight: 600;
+}
+.__xy_toolbar .__xy_btn_confirm:disabled {
+	background: #ccc; border-color: #ccc; cursor: not-allowed;
+}
+.__xy_toolbar .__xy_select_all {
+	display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+}
+.__xy_toolbar .__xy_select_all input {
+	width: 16px; height: 16px; accent-color: #165DFF;
+}
+`;
+	document.head.appendChild(style);
+}
+
+function findProductCards() {
+	const selectors = [
+		'.search-container--eigqxPi6 .feeds-list-container--UkIMBPNk > a',
+		'.feeds-list-container--UkIMBPNk > a',
+		'div[class*="search-container"] div[class*="feeds-list-container"] > a',
+		'div[class*="feeds-list-container"] > a',
+		'a[href*="item"]',
+		'a[href*="detail"]'
+	];
+	for (const sel of selectors) {
+		const els = document.querySelectorAll(sel);
+		if (els.length > 0) {
+			return Array.from(els).filter(el => {
+				return el.href &&
+					(el.href.includes('item') || el.href.includes('detail')) &&
+					!el.href.includes('javascript:') &&
+					!el.href.includes('#');
+			});
+		}
+	}
+	return [];
+}
+
+function getCoverFromCard(card) {
+	const img = card.querySelector('img');
+	if (img) return img.dataset.src || img.src || '';
+	return '';
+}
+
+function renderCheckboxes() {
+	const cards = findProductCards();
+	cards.forEach(card => {
+		if (card.querySelector('.__xy_checkbox')) return;
+		const computedStyle = window.getComputedStyle(card);
+		if (computedStyle.position === 'static') {
+			card.style.position = 'relative';
+		}
+		const cb = document.createElement('input');
+		cb.type = 'checkbox';
+		cb.className = '__xy_checkbox';
+		cb.checked = !!selectedMap[card.href];
+		cb.addEventListener('click', (e) => {
+			e.stopPropagation();
+			if (cb.checked) {
+				selectedMap[card.href] = { url: card.href, coverImage: getCoverFromCard(card) };
+			} else {
+				delete selectedMap[card.href];
+			}
+			updateToolbar();
+		});
+		card.appendChild(cb);
+	});
+}
+
+function createToolbar(config) {
+	if (document.getElementById('__xy_toolbar')) return;
+	const bar = document.createElement('div');
+	bar.id = '__xy_toolbar';
+	bar.className = '__xy_toolbar';
+	bar.innerHTML =
+		'<label class="__xy_select_all"><input type="checkbox" id="__xy_selectAll"> 全选</label>' +
+		'<span class="__xy_count">已选 <strong id="__xy_selectedCount">0</strong> 个商品</span>' +
+		'<div style="flex:1"></div>' +
+		'<button id="__xy_btnCancel">取消</button>' +
+		'<button id="__xy_btnConfirm" class="__xy_btn_confirm" disabled>确认采集</button>';
+	document.body.appendChild(bar);
+
+	document.getElementById('__xy_selectAll').addEventListener('change', function() {
+		const cards = findProductCards();
+		cards.forEach(card => {
+			const cb = card.querySelector('.__xy_checkbox');
+			if (cb) {
+				cb.checked = this.checked;
+				if (this.checked) {
+					selectedMap[card.href] = { url: card.href, coverImage: getCoverFromCard(card) };
+				} else {
+					delete selectedMap[card.href];
+				}
+			}
+		});
+		updateToolbar();
+	});
+
+	document.getElementById('__xy_btnCancel').addEventListener('click', () => {
+		disableSelectMode();
+		sendLog('已取消勾选模式');
+	});
+
+	document.getElementById('__xy_btnConfirm').addEventListener('click', () => {
+		collectSelectedProducts(config);
+	});
+}
+
+function updateToolbar() {
+	const count = Object.keys(selectedMap).length;
+	const countEl = document.getElementById('__xy_selectedCount');
+	const confirmBtn = document.getElementById('__xy_btnConfirm');
+	if (countEl) countEl.textContent = count;
+	if (confirmBtn) {
+		confirmBtn.disabled = count === 0;
+		confirmBtn.textContent = count > 0 ? '确认采集 (' + count + ')' : '确认采集';
+	}
+	const selectAll = document.getElementById('__xy_selectAll');
+	if (selectAll) {
+		const cards = findProductCards();
+		const cbList = [];
+		cards.forEach(c => {
+			const cb = c.querySelector('.__xy_checkbox');
+			if (cb) cbList.push(cb);
+		});
+		const allChecked = cbList.length > 0 && cbList.every(cb => cb.checked);
+		selectAll.checked = allChecked;
+		selectAll.indeterminate = count > 0 && !allChecked;
+	}
+}
+
+async function enableSelectMode(config) {
+	await __verifyNotice();
+	selectModeActive = true;
+	selectedMap = {};
+
+	injectSelectModeStyles();
+	renderCheckboxes();
+	createToolbar(config);
+	updateToolbar();
+
+	sendLog('勾选模式已开启，点击商品卡片上的复选框选择商品');
+}
+
+function disableSelectMode() {
+	selectModeActive = false;
+	selectedMap = {};
+
+	document.querySelectorAll('.__xy_checkbox').forEach(cb => cb.remove());
+	const toolbar = document.getElementById('__xy_toolbar');
+	if (toolbar) toolbar.remove();
+	const styles = document.getElementById('__xy_select_styles');
+	if (styles) styles.remove();
+}
+
+async function collectSelectedProducts(config) {
+	const products = Object.values(selectedMap);
+	if (products.length === 0) {
+		sendLog('请先勾选商品');
+		return;
+	}
+
+	const confirmBtn = document.getElementById('__xy_btnConfirm');
+	const cancelBtn = document.getElementById('__xy_btnCancel');
+	if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '采集中...'; }
+	if (cancelBtn) cancelBtn.disabled = true;
+
+	sendLog('开始采集 ' + products.length + ' 个已选商品');
+	sendProgress(0, products.length, '开始采集 ' + products.length + ' 个已选商品');
+
+	let completed = 0;
+	const tasks = products.map((item, index) => async () => {
+		sendLog('采集商品详情 ' + (index + 1) + '/' + products.length);
+		const detail = await fetchProductDetail(item.url);
+		completed++;
+		sendProgress(completed, products.length, '采集商品详情 ' + completed + '/' + products.length);
+		return { ...detail, coverImage: item.coverImage };
+	});
+
+	const results = await runConcurrently(tasks, config.concurrentCount || 3);
+	const cc = config.concurrentCount || 3;
+	await exportData(results, '手动采集', config.collectDetail !== false, config.exportType || 'csv', config.collectImages, cc, config.selectedFields);
+
+	sendLog('手动采集完成，共 ' + products.length + ' 个商品已导出');
+	chrome.runtime.sendMessage({ action: 'selectionComplete', count: products.length });
+
+	disableSelectMode();
 }
 
 console.log('闲鱼商品链接采集器已加载');
